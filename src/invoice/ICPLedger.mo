@@ -1,5 +1,3 @@
-import Ledger     "canister:ledger";
-
 import A          "./Account";
 import CRC32      "./CRC32";
 import Hex        "./Hex";
@@ -13,8 +11,9 @@ import Nat64      "mo:base/Nat64";
 import Principal  "mo:base/Principal";
 import Result     "mo:base/Result";
 import Time       "mo:base/Time";
-
+import L "../ledger/Ledger";
 module {
+  let Ledger =actor("ryjl3-tyaaa-aaaaa-aaaba-cai"):L.Self;
   public type Memo = Nat64;
 
   public type Tokens = {

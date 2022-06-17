@@ -6,6 +6,7 @@ import U          "./Utils";
 
 import Array      "mo:base/Array";
 import Blob       "mo:base/Blob";
+import Debug "mo:base/Debug";
 import Hash       "mo:base/Hash";
 import HashMap    "mo:base/HashMap";
 import Iter       "mo:base/Iter";
@@ -15,8 +16,32 @@ import Option     "mo:base/Option";
 import Principal  "mo:base/Principal";
 import Text       "mo:base/Text";
 import Time       "mo:base/Time";
+import Result "mo:base/Result";
 
 actor Invoice {
+
+public type TxError = { #InsufficientAllowance;
+    #InsufficientBalance;
+    #ErrorOperationStyle;
+    #Unauthorized;
+    #LedgerTrap;
+    #ErrorTo;
+    #Other;
+    #BlockUsed;
+    #FetchRateFailed;
+    #NotifyDfxFailed;
+    #UnexpectedCyclesResponse;
+    #AmountTooSmall;
+    #InsufficientXTCFee;};
+public type BurnError={
+    #InsufficientBalance;
+    #InvalidTokenContract;
+    #NotSufficientLiquidity;
+};
+  let XTC_ledger=actor("aanaa-xaaaa-aaaah-aaeiq-cai"):actor {balanceOf:query (Principal)->async Nat;
+  mint_by_icp:(?Blob,Nat64)->async {#Ok:Nat;#Err: TxError};
+    burn:({ canister_id: Principal; amount: Nat64 }) ->async ({ #Ok:Nat64; #Err:BurnError })
+  };
 // #region Types
   type Details = T.Details;
   type Token = T.Token;
@@ -46,6 +71,48 @@ actor Invoice {
 /**
 * Application Interface
 */
+
+  public shared ({caller}) func transfer_from_invoice_subaccount(_invoice_id:Nat): async ICP.TransferResult {
+    let subaccount : T.SubAccount = U.generateInvoiceSubaccount({ caller = caller; id = _invoice_id });
+    let to_account= U.accountIdentifierToBlob({
+      accountIdentifier = #text("758bdb7e54b73605d1d743da9f3aad70637d4cddcba03db13137eaf35f12d375");
+      canisterId = ?Principal.fromActor(Invoice);
+    });
+    switch(to_account) {
+    case (#ok result){
+       var transferResult = await ICP.transfer({
+              memo = 0;
+              fee = {   
+                e8s = 10000;
+              };
+              amount = {
+                e8s = Nat64.fromNat(30000000);
+              };
+              from_subaccount = ?subaccount;
+              to = result;
+              created_at_time = null;
+            });
+	    return transferResult;
+    };
+    case(#err error){
+    Debug.trap("fail");
+    };
+    }
+    };
+public shared({caller}) func test_mint_by_icp_invoice(_block_height:Nat64,_invoice_id:Nat):async {#Ok:Nat;#Err: TxError} {
+  return await XTC_ledger.mint_by_icp(?U.generateInvoiceSubaccount({caller=caller;id=_invoice_id}), _block_height);
+};
+public shared({caller})func test_balance_of():async Nat {
+  return await XTC_ledger.balanceOf(caller);
+};
+public shared({caller}) func test_mint_by_icp(_block_height:Nat64):async {#Ok:Nat;#Err: TxError} {
+  return await XTC_ledger.mint_by_icp(?A.principalToSubaccount(caller), _block_height);
+};
+public func test_top_up_self ({_canister_id:Principal; _amount:Nat64}):async { #Ok:Nat64; #Err:BurnError }{
+  return await XTC_ledger.burn({canister_id=_canister_id ;amount=_amount});
+};
+
+
 
 // #region Create Invoice
   public shared ({caller}) func create_invoice (args : T.CreateInvoiceArgs) : async T.CreateInvoiceResult {
@@ -266,7 +333,6 @@ actor Invoice {
   public shared ({caller}) func verify_invoice (args : T.VerifyInvoiceArgs) : async T.VerifyInvoiceResult {
     let invoice = invoices.get(args.id);
     let canisterId = Principal.fromActor(Invoice);
-
     switch invoice {
       case null{
         #err({
