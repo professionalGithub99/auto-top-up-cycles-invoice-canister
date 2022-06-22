@@ -114,6 +114,65 @@ public func test_top_up_self ({_canister_id:Principal; _amount:Nat64}):async { #
 
 
 
+
+// #region Create Invoice
+  public shared ({caller}) func create_invoice_for (args : T.CreateInvoiceArgs, _principal:Principal) : async T.CreateInvoiceResult {
+    let id : Nat = invoiceCounter;
+    // increment counter
+    invoiceCounter += 1;
+    let inputsValid = areInputsValid(args);
+    if(not inputsValid) {
+      return #err({
+        message = ?"Bad size: one or more of your inputs exceeds the allowed size.";
+        kind = #BadSize;
+      });
+    };
+
+    if(id > MAX_INVOICES){
+      return #err({
+        message = ?"The maximum number of invoices has been reached.";
+        kind = #MaxInvoicesReached;
+      });
+    };
+
+    let destinationResult : T.GetDestinationAccountIdentifierResult = getDestinationAccountIdentifier({
+      token = args.token;
+      invoiceId = id;
+      caller=_principal;
+    });
+
+    switch(destinationResult){
+      case (#err result) {
+        #err({
+          message = ?"Invalid destination account identifier";
+          kind = #InvalidDestination;
+        });
+      };
+      case (#ok result) {
+        let destination : AccountIdentifier = result.accountIdentifier;
+        let token = getTokenVerbose(args.token);
+
+        let invoice : Invoice = {
+          id;
+          creator = caller;
+          details = args.details;
+          permissions = args.permissions;
+          amount = args.amount;
+          amountPaid = 0;
+          token;
+          verifiedAtTime = null;
+          paid = false;
+          destination;
+        };
+
+        invoices.put(id, invoice);
+
+        #ok({invoice});
+      };
+    };
+  };
+
+
 // #region Create Invoice
   public shared ({caller}) func create_invoice (args : T.CreateInvoiceArgs) : async T.CreateInvoiceResult {
     let id : Nat = invoiceCounter;
